@@ -1,0 +1,4 @@
+schema_version: 1
+id: work-cli-qa
+description: Work CLI smoke-test lifecycle record
+scaffold: scaffold

@@ -1,0 +1,70 @@
+version: "3"
+
+tasks:
+  deps:
+    desc: Sync module dependencies
+    cmds:
+      - go mod tidy
+
+  fmt:
+    desc: Format Go files
+    cmds:
+      - gofmt -w .
+
+  fmt:check:
+    desc: Fail when gofmt would change files
+    cmds:
+      - test -z "$(gofmt -l .)"
+
+  lint:
+    desc: Run static checks
+    deps: [deps, fmt:check]
+    cmds:
+      - go vet ./...
+
+  test:
+    desc: Run tests
+    deps: [deps, fmt:check]
+    cmds:
+      - go test ./...
+
+  build:
+    desc: Build the work binary
+    deps: [deps, fmt:check]
+    cmds:
+      - mkdir -p bin
+      - go build -o bin/work ./cmd/work
+
+  run:
+    desc: Run work without building
+    cmds:
+      - go run ./cmd/work {{.CLI_ARGS}}
+
+  smoke:
+    desc: Deterministic smoke checks for the work CLI
+    deps: [build]
+    cmds:
+      - mkdir -p test/smoke
+      - rm -f test/smoke/work-version.output.json
+      - ./bin/work --json version > test/smoke/work-version.output.json
+      - jq -e . test/smoke/work-version.output.json >/dev/null
+      - |
+        WORK_SMOKE=$(mktemp -d)
+        ./bin/work --store "$WORK_SMOKE/.work" init
+        ./bin/work --store "$WORK_SMOKE/.work" inbox add "Captured idea" --body "raw note" --source smoke
+        ./bin/work --store "$WORK_SMOKE/.work" inbox --json >/dev/null
+        ./bin/work --store "$WORK_SMOKE/.work" triage accept IN-0001 --priority P1 --area smoke
+        ./bin/work --store "$WORK_SMOKE/.work" view ready --json >/dev/null
+        ./bin/work --store "$WORK_SMOKE/.work" show W-0001 --json >/dev/null
+        ./bin/work --store "$WORK_SMOKE/.work" show IN-0001 --json >/dev/null
+
+  qa:
+    desc: Black-box QA against the work CLI source via the work-cli-qa skill harness
+    cmds:
+      - go run ./.claude/skills/work-cli-qa/cli/main.go --repo-root . {{.CLI_ARGS}}
+
+  ci:
+    desc: Canonical CI contract command
+    deps: [lint, test, build, smoke]
+    cmds:
+      - echo "ci checks passed"

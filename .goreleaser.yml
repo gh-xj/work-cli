@@ -1,0 +1,50 @@
+version: 2
+
+project_name: work
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: work
+    binary: work
+    main: ./cmd/work
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/gh-xj/work-cli/internal/workcli.appVersion={{.Version}}
+      - -X github.com/gh-xj/work-cli/internal/workcli.appCommit={{.Commit}}
+      - -X github.com/gh-xj/work-cli/internal/workcli.appDate={{.Date}}
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: work
+    builds: [work]
+    name_template: "work-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
+    format: tar.gz
+    files:
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+      - Merge pull request
+      - Merge branch

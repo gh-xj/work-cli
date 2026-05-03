@@ -1,0 +1,4 @@
+bin/
+test/smoke/*.output.json
+.work/
+*.test
