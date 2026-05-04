@@ -35,6 +35,16 @@ func TestExecuteVersionCommand(t *testing.T) {
 	}
 }
 
+func TestExecuteVersionFlag(t *testing.T) {
+	code, stdout, stderr := runWork(t, "--version")
+	if code != appctx.ExitSuccess {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr)
+	}
+	if !strings.Contains(stdout, appVersion) {
+		t.Fatalf("expected %q in --version stdout, got %q", appVersion, stdout)
+	}
+}
+
 func TestExecuteInitUsesGlobalStoreAndHonorsJSON(t *testing.T) {
 	fake, restore := installFakeStore(t)
 	defer restore()

@@ -46,17 +46,26 @@ func Execute(opts Options) int {
 		vars[key] = value
 	}
 
+	exitRequested := false
+	exitCode := appctx.ExitSuccess
 	parser, err := kong.New(opts.Root,
 		kong.Name(opts.Meta.Name),
 		kong.Description(opts.Meta.Description),
 		kong.Writers(stdout, stderr),
 		kong.Vars(vars),
+		kong.Exit(func(code int) {
+			exitRequested = true
+			exitCode = code
+		}),
 	)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return appctx.ExitError
 	}
 	ctx, err := parser.Parse(opts.Args)
+	if exitRequested {
+		return exitCode
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %s\n", opts.Meta.Name, err)
 		return appctx.ExitUsage

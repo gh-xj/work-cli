@@ -5,6 +5,8 @@ import (
 	"io"
 	"os"
 
+	"github.com/alecthomas/kong"
+
 	"github.com/gh-xj/work-cli/internal/cliruntime"
 	"github.com/gh-xj/work-cli/internal/log"
 )
@@ -19,10 +21,11 @@ var (
 )
 
 type CLI struct {
-	Verbose bool   `short:"v" help:"enable debug logs"`
-	NoColor bool   `name:"no-color" help:"disable colorized output"`
-	JSON    bool   `help:"emit machine-readable JSON output"`
-	Store   string `help:"path to the work store" default:".work"`
+	Verbose     bool             `short:"v" help:"enable debug logs"`
+	NoColor     bool             `name:"no-color" help:"disable colorized output"`
+	JSON        bool             `help:"emit machine-readable JSON output"`
+	Store       string           `help:"path to the work store" default:".work"`
+	VersionFlag kong.VersionFlag `name:"version" help:"print version and exit"`
 
 	Init    InitCmd    `cmd:"" help:"initialize a work store"`
 	Inbox   InboxCmd   `cmd:"" help:"capture and list inbox items"`
