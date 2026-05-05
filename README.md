@@ -19,6 +19,9 @@ work init                              # create .work/ in $PWD
 work inbox add "Idea I want to capture"
 work inbox                              # list captured items
 work triage accept IN-0001 --priority P1 --area infra
+work claim W-0001 --actor xj@laptop       # time-bound coordination lease
+work new "Research question" --type research
+work show W-0002 --policy              # print the type policy for typed work
 work view ready                         # show ready work items
 work show W-0001
 ```
@@ -30,9 +33,17 @@ All commands accept `--json` for machine-readable output.
 ```
 .work/
   config.yaml         # store config (gitignored)
-  items/
+  inbox/
     IN-0001.yaml      # inbox capture
+  items/
     W-0001.yaml       # accepted work item
+  leases/
+    W-0001.yaml       # optional time-bounded claim
+  types/
+    research/
+      type.yaml       # type manifest
+      policy.md       # optional agent-facing type policy
+      scaffold/       # copied into spaces/ for typed work items
 ```
 
 The schema is plain YAML. Edit by hand if you want; the CLI re-reads on

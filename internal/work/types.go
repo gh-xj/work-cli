@@ -25,6 +25,14 @@ const (
 	WorkStatusCancelled WorkStatus = "cancelled"
 )
 
+type ActorKind string
+
+const (
+	ActorKindHuman      ActorKind = "human"
+	ActorKindAgent      ActorKind = "agent"
+	ActorKindAutomation ActorKind = "automation"
+)
+
 // InboxItem is a captured piece of untriaged work.
 type InboxItem struct {
 	ID         string            `yaml:"id" json:"id"`
@@ -65,6 +73,40 @@ type WorkItem struct {
 	UpdatedAt     time.Time         `yaml:"updated_at" json:"updated_at"`
 }
 
+// Actor identifies the human, agent runtime, script, or automation touching
+// coordination records such as leases and attempts.
+type Actor struct {
+	ID      string    `yaml:"id" json:"id"`
+	Kind    ActorKind `yaml:"kind" json:"kind"`
+	Label   string    `yaml:"label,omitempty" json:"label,omitempty"`
+	Runtime string    `yaml:"runtime,omitempty" json:"runtime,omitempty"`
+	Model   string    `yaml:"model,omitempty" json:"model,omitempty"`
+}
+
+// Session records optional runtime provenance for an external agent session.
+type Session struct {
+	ID       string `yaml:"id,omitempty" json:"id,omitempty"`
+	ThreadID string `yaml:"thread_id,omitempty" json:"thread_id,omitempty"`
+	TurnID   string `yaml:"turn_id,omitempty" json:"turn_id,omitempty"`
+}
+
+// WorkLease is a time-bounded claim on a work item.
+type WorkLease struct {
+	WorkItemID string    `yaml:"work_item_id" json:"work_item_id"`
+	Actor      Actor     `yaml:"actor" json:"actor"`
+	Session    *Session  `yaml:"session,omitempty" json:"session,omitempty"`
+	AcquiredAt time.Time `yaml:"acquired_at" json:"acquired_at"`
+	ExpiresAt  time.Time `yaml:"expires_at" json:"expires_at"`
+}
+
+// WorkPolicy is the agent-facing policy attached to a work type.
+type WorkPolicy struct {
+	WorkItemID string `yaml:"work_item_id" json:"work_item_id"`
+	WorkType   string `yaml:"work_type" json:"work_type"`
+	Path       string `yaml:"path" json:"path"`
+	Body       string `yaml:"body" json:"body"`
+}
+
 // WorkItemInput describes a work item to create.
 type WorkItemInput struct {
 	Title         string
@@ -76,6 +118,14 @@ type WorkItemInput struct {
 	Labels        []string
 	SourceInboxID string
 	Metadata      map[string]string
+}
+
+// ClaimWorkItemInput describes a lease claim request.
+type ClaimWorkItemInput struct {
+	ID      string
+	Actor   Actor
+	Session *Session
+	TTL     time.Duration
 }
 
 // AcceptInboxOptions controls how an inbox item becomes a work item.

@@ -13,8 +13,11 @@ type workStore interface {
 	GetInboxItem(context.Context, string) (work.InboxItem, error)
 	AcceptInboxItem(context.Context, acceptInboxItemInput) (work.WorkItem, error)
 	CreateWorkItem(context.Context, work.WorkItemInput) (work.WorkItem, error)
+	ClaimWorkItem(context.Context, work.ClaimWorkItemInput) (work.WorkLease, error)
 	ListView(context.Context, string) (work.ViewResult, error)
 	GetWorkItem(context.Context, string) (work.WorkItem, error)
+	GetWorkLease(context.Context, string) (work.WorkLease, bool, error)
+	GetWorkPolicy(context.Context, string) (work.WorkPolicy, bool, error)
 }
 
 type acceptInboxItemInput struct {
@@ -58,10 +61,22 @@ func (s domainStore) CreateWorkItem(_ context.Context, input work.WorkItemInput)
 	return s.store.CreateWorkItem(input)
 }
 
+func (s domainStore) ClaimWorkItem(_ context.Context, input work.ClaimWorkItemInput) (work.WorkLease, error) {
+	return s.store.ClaimWorkItem(input)
+}
+
 func (s domainStore) ListView(_ context.Context, name string) (work.ViewResult, error) {
 	return s.store.ListView(name)
 }
 
 func (s domainStore) GetWorkItem(_ context.Context, id string) (work.WorkItem, error) {
 	return s.store.GetWorkItem(id)
+}
+
+func (s domainStore) GetWorkLease(_ context.Context, id string) (work.WorkLease, bool, error) {
+	return s.store.GetWorkLease(id)
+}
+
+func (s domainStore) GetWorkPolicy(_ context.Context, id string) (work.WorkPolicy, bool, error) {
+	return s.store.GetWorkPolicy(id)
 }

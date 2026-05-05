@@ -19,6 +19,7 @@ var (
 	ErrNotFound        = errors.New("work item not found")
 	ErrAlreadyExists   = errors.New("work store file already exists")
 	ErrAlreadyAccepted = errors.New("inbox item already accepted")
+	ErrAlreadyClaimed  = errors.New("work item already claimed")
 	ErrStoreLocked     = errors.New("work store is locked")
 )
 

@@ -16,6 +16,7 @@ type workTypeManifest struct {
 	SchemaVersion int    `yaml:"schema_version"`
 	ID            string `yaml:"id"`
 	Description   string `yaml:"description,omitempty"`
+	Policy        string `yaml:"policy,omitempty"`
 	Scaffold      string `yaml:"scaffold,omitempty"`
 
 	root string
@@ -46,6 +47,11 @@ func (s *Store) readWorkTypeManifest(typeID string) (workTypeManifest, error) {
 	if manifest.Scaffold != "" {
 		if _, err := cleanWorkTypeRelativePath(manifest.Scaffold); err != nil {
 			return workTypeManifest{}, fmt.Errorf("work type %q scaffold: %w", id, err)
+		}
+	}
+	if manifest.Policy != "" {
+		if _, err := cleanWorkTypeRelativePath(manifest.Policy); err != nil {
+			return workTypeManifest{}, fmt.Errorf("work type %q policy: %w", id, err)
 		}
 	}
 
@@ -87,6 +93,63 @@ func (m workTypeManifest) scaffoldPath() (string, bool, error) {
 		return "", false, err
 	}
 	return filepath.Join(m.root, clean), true, nil
+}
+
+func (m workTypeManifest) policyPath() (string, bool, error) {
+	raw := strings.TrimSpace(m.Policy)
+	explicit := raw != ""
+	if raw == "" {
+		raw = "policy.md"
+	}
+	clean, err := cleanWorkTypeRelativePath(raw)
+	if err != nil {
+		return "", false, err
+	}
+	path := filepath.Join(m.root, clean)
+	if _, err := os.Stat(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) && !explicit {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	return path, true, nil
+}
+
+// GetWorkPolicy returns the type-level policy for a typed work item, if one exists.
+func (s *Store) GetWorkPolicy(id string) (WorkPolicy, bool, error) {
+	id = strings.TrimSpace(id)
+	if !workIDPattern.MatchString(id) {
+		return WorkPolicy{}, false, fmt.Errorf("invalid work item id %q", id)
+	}
+	if err := s.ensureInitialized(); err != nil {
+		return WorkPolicy{}, false, err
+	}
+	item, err := s.readWorkItem(id)
+	if err != nil {
+		return WorkPolicy{}, false, err
+	}
+	workType := strings.TrimSpace(item.Type)
+	if workType == "" {
+		return WorkPolicy{}, false, nil
+	}
+	manifest, err := s.readWorkTypeManifest(workType)
+	if err != nil {
+		return WorkPolicy{}, false, err
+	}
+	path, ok, err := manifest.policyPath()
+	if err != nil || !ok {
+		return WorkPolicy{}, false, err
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return WorkPolicy{}, false, err
+	}
+	return WorkPolicy{
+		WorkItemID: item.ID,
+		WorkType:   workType,
+		Path:       path,
+		Body:       string(body),
+	}, true, nil
 }
 
 func (s *Store) createWorkItemSpaceLocked(id string, manifest workTypeManifest) (string, error) {

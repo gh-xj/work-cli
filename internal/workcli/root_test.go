@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gh-xj/work-cli/internal/appctx"
 	"github.com/gh-xj/work-cli/internal/work"
@@ -138,6 +139,32 @@ func TestExecuteNewMapsTitle(t *testing.T) {
 	}
 }
 
+func TestExecuteClaimMapsLeaseInput(t *testing.T) {
+	fake, restore := installFakeStore(t)
+	defer restore()
+
+	code, _, stderr := runWork(t,
+		"claim", "W-0001",
+		"--actor", "agent:codex:test",
+		"--ttl", "30m",
+		"--session", "session-1",
+		"--thread", "thread-1",
+		"--turn", "turn-1",
+	)
+	if code != appctx.ExitSuccess {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr)
+	}
+	if !fake.claimCalled {
+		t.Fatalf("expected ClaimWorkItem to be called")
+	}
+	if fake.claimInput.ID != "W-0001" || fake.claimInput.Actor.ID != "agent:codex:test" || fake.claimInput.TTL != 30*time.Minute {
+		t.Fatalf("unexpected claim input: %#v", fake.claimInput)
+	}
+	if fake.claimInput.Session == nil || fake.claimInput.Session.ThreadID != "thread-1" || fake.claimInput.Session.TurnID != "turn-1" {
+		t.Fatalf("expected session fields, got %#v", fake.claimInput.Session)
+	}
+}
+
 func TestExecuteViewDefaultsReadyAndAcceptsName(t *testing.T) {
 	fake, restore := installFakeStore(t)
 	defer restore()
@@ -176,6 +203,44 @@ func TestExecuteShowMapsID(t *testing.T) {
 	}
 }
 
+func TestExecuteShowPolicyPrintsTypePolicy(t *testing.T) {
+	fake, restore := installFakeStore(t)
+	defer restore()
+
+	code, stdout, stderr := runWork(t, "show", "W-0001", "--policy")
+	if code != appctx.ExitSuccess {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr)
+	}
+	if fake.getPolicyID != "W-0001" {
+		t.Fatalf("expected policy lookup for W-0001, got %q", fake.getPolicyID)
+	}
+	if stdout != "# Policy\n" {
+		t.Fatalf("unexpected policy stdout: %q", stdout)
+	}
+}
+
+func TestExecuteShowPolicyJSONIncludesPolicy(t *testing.T) {
+	fake, restore := installFakeStore(t)
+	defer restore()
+
+	code, stdout, stderr := runWork(t, "--json", "show", "W-0001", "--policy")
+	if code != appctx.ExitSuccess {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr)
+	}
+	var payload struct {
+		Policy work.WorkPolicy `json:"policy"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
+		t.Fatalf("unmarshal stdout: %v (stdout=%q)", err, stdout)
+	}
+	if payload.Policy.WorkItemID != "W-0001" || payload.Policy.Body != "# Policy\n" {
+		t.Fatalf("unexpected policy JSON: %#v", payload.Policy)
+	}
+	if fake.getPolicyID != "W-0001" {
+		t.Fatalf("expected policy lookup for W-0001, got %q", fake.getPolicyID)
+	}
+}
+
 func installFakeStore(t *testing.T) (*fakeWorkStore, func()) {
 	t.Helper()
 	fake := &fakeWorkStore{}
@@ -197,14 +262,17 @@ type fakeWorkStore struct {
 	addInboxCalled  bool
 	acceptCalled    bool
 	createCalled    bool
+	claimCalled     bool
 	getCalled       bool
 
 	addInboxInput work.InboxItemInput
 	acceptInput   acceptInboxItemInput
 	createInput   work.WorkItemInput
+	claimInput    work.ClaimWorkItemInput
 	viewName      string
 	getID         string
 	getInboxID    string
+	getPolicyID   string
 }
 
 func (f *fakeWorkStore) Init(context.Context) error {
@@ -240,6 +308,12 @@ func (f *fakeWorkStore) CreateWorkItem(_ context.Context, input work.WorkItemInp
 	return work.WorkItem{}, nil
 }
 
+func (f *fakeWorkStore) ClaimWorkItem(_ context.Context, input work.ClaimWorkItemInput) (work.WorkLease, error) {
+	f.claimCalled = true
+	f.claimInput = input
+	return work.WorkLease{WorkItemID: input.ID, Actor: input.Actor, Session: input.Session, ExpiresAt: time.Date(2026, 4, 29, 13, 0, 0, 0, time.UTC)}, nil
+}
+
 func (f *fakeWorkStore) ListView(_ context.Context, name string) (work.ViewResult, error) {
 	f.viewName = name
 	return work.ViewResult{}, nil
@@ -249,4 +323,18 @@ func (f *fakeWorkStore) GetWorkItem(_ context.Context, id string) (work.WorkItem
 	f.getCalled = true
 	f.getID = id
 	return work.WorkItem{}, nil
+}
+
+func (f *fakeWorkStore) GetWorkLease(context.Context, string) (work.WorkLease, bool, error) {
+	return work.WorkLease{}, false, nil
+}
+
+func (f *fakeWorkStore) GetWorkPolicy(_ context.Context, id string) (work.WorkPolicy, bool, error) {
+	f.getPolicyID = id
+	return work.WorkPolicy{
+		WorkItemID: id,
+		WorkType:   "research",
+		Path:       "/tmp/.work/types/research/policy.md",
+		Body:       "# Policy\n",
+	}, true, nil
 }

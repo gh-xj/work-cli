@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -27,6 +28,7 @@ func TestInitCreatesLocalFirstLayout(t *testing.T) {
 		"items",
 		"types",
 		"types/research/type.yaml",
+		"types/research/policy.md",
 		"types/research/scaffold/README.md",
 		"types/research/scaffold/RULES.md",
 		"types/research/scaffold/notes.md",
@@ -54,6 +56,13 @@ func TestInitCreatesLocalFirstLayout(t *testing.T) {
 	}
 	if !bytes.Contains(readme, []byte("Scaffold version: 1")) {
 		t.Fatalf("expected research README to include scaffold version, got:\n%s", readme)
+	}
+	manifest, err := os.ReadFile(filepath.Join(store.Root(), "types", "research", "type.yaml"))
+	if err != nil {
+		t.Fatalf("read research type manifest: %v", err)
+	}
+	if !bytes.Contains(manifest, []byte("policy: policy.md")) {
+		t.Fatalf("expected research manifest to reference policy.md, got:\n%s", manifest)
 	}
 }
 
@@ -239,6 +248,155 @@ func TestCreateListAndGetWorkItems(t *testing.T) {
 	}
 }
 
+func TestClaimWorkItemCreatesLease(t *testing.T) {
+	store := newInitializedTestStore(t)
+	item, err := store.CreateWorkItem(WorkItemInput{Title: "Claimable work"})
+	if err != nil {
+		t.Fatalf("CreateWorkItem() error = %v", err)
+	}
+
+	lease, err := store.ClaimWorkItem(ClaimWorkItemInput{
+		ID: item.ID,
+		Actor: Actor{
+			ID:      "agent:codex:xj-mac",
+			Runtime: "codex",
+			Model:   "gpt-5.5",
+		},
+		Session: &Session{ID: "session-1", ThreadID: "thread-1", TurnID: "turn-1"},
+		TTL:     time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("ClaimWorkItem() error = %v", err)
+	}
+	if lease.WorkItemID != item.ID || lease.Actor.Kind != ActorKindAgent || lease.Actor.Runtime != "codex" {
+		t.Fatalf("unexpected lease: %#v", lease)
+	}
+	if lease.Session == nil || lease.Session.ThreadID != "thread-1" {
+		t.Fatalf("expected session provenance, got %#v", lease.Session)
+	}
+	if !lease.ExpiresAt.After(lease.AcquiredAt) {
+		t.Fatalf("expected lease expiry after acquisition, got %#v", lease)
+	}
+
+	active, ok, err := store.GetWorkLease(item.ID)
+	if err != nil {
+		t.Fatalf("GetWorkLease() error = %v", err)
+	}
+	if !ok || active.Actor.ID != lease.Actor.ID {
+		t.Fatalf("expected active lease, got ok=%v lease=%#v", ok, active)
+	}
+	leaseYAML, err := os.ReadFile(filepath.Join(store.Root(), "leases", item.ID+".yaml"))
+	if err != nil {
+		t.Fatalf("read lease yaml: %v", err)
+	}
+	if !bytes.Contains(leaseYAML, []byte("work_item_id: "+item.ID)) ||
+		!bytes.Contains(leaseYAML, []byte("kind: agent")) ||
+		!bytes.Contains(leaseYAML, []byte("thread_id: thread-1")) {
+		t.Fatalf("expected lease YAML to contain persisted fields, got:\n%s", leaseYAML)
+	}
+}
+
+func TestClaimWorkItemRejectsDifferentActorUntilExpired(t *testing.T) {
+	store := newInitializedTestStore(t)
+	item, err := store.CreateWorkItem(WorkItemInput{Title: "Shared work"})
+	if err != nil {
+		t.Fatalf("CreateWorkItem() error = %v", err)
+	}
+	if _, err := store.ClaimWorkItem(ClaimWorkItemInput{
+		ID:    item.ID,
+		Actor: Actor{ID: "agent:codex:first"},
+		TTL:   time.Hour,
+	}); err != nil {
+		t.Fatalf("ClaimWorkItem(first) error = %v", err)
+	}
+	if _, err := store.ClaimWorkItem(ClaimWorkItemInput{
+		ID:    item.ID,
+		Actor: Actor{ID: "agent:codex:second"},
+		TTL:   time.Hour,
+	}); !errors.Is(err, ErrAlreadyClaimed) {
+		t.Fatalf("expected ErrAlreadyClaimed, got %v", err)
+	}
+}
+
+func TestClaimWorkItemAllowsSameActorRenewalAndExpiredReplacement(t *testing.T) {
+	store := newInitializedTestStore(t)
+	item, err := store.CreateWorkItem(WorkItemInput{Title: "Renewable work"})
+	if err != nil {
+		t.Fatalf("CreateWorkItem() error = %v", err)
+	}
+	first, err := store.ClaimWorkItem(ClaimWorkItemInput{
+		ID:    item.ID,
+		Actor: Actor{ID: "agent:codex:first"},
+		TTL:   time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("ClaimWorkItem(first) error = %v", err)
+	}
+	second, err := store.ClaimWorkItem(ClaimWorkItemInput{
+		ID:    item.ID,
+		Actor: Actor{ID: "agent:codex:first"},
+		TTL:   time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("ClaimWorkItem(renew) error = %v", err)
+	}
+	if !second.AcquiredAt.After(first.AcquiredAt) {
+		t.Fatalf("expected renewal to refresh acquisition time: first=%s second=%s", first.AcquiredAt, second.AcquiredAt)
+	}
+
+	expiring, err := store.CreateWorkItem(WorkItemInput{Title: "Expiring work"})
+	if err != nil {
+		t.Fatalf("CreateWorkItem(expiring) error = %v", err)
+	}
+	if _, err := store.ClaimWorkItem(ClaimWorkItemInput{
+		ID:    expiring.ID,
+		Actor: Actor{ID: "agent:codex:old"},
+		TTL:   time.Nanosecond,
+	}); err != nil {
+		t.Fatalf("ClaimWorkItem(expiring old) error = %v", err)
+	}
+	replacement, err := store.ClaimWorkItem(ClaimWorkItemInput{
+		ID:    expiring.ID,
+		Actor: Actor{ID: "agent:codex:new"},
+		TTL:   time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("ClaimWorkItem(expired replacement) error = %v", err)
+	}
+	if replacement.Actor.ID != "agent:codex:new" {
+		t.Fatalf("expected replacement actor, got %#v", replacement)
+	}
+}
+
+func TestClaimWorkItemValidatesInputs(t *testing.T) {
+	store := newInitializedTestStore(t)
+	item, err := store.CreateWorkItem(WorkItemInput{Title: "Validate claim"})
+	if err != nil {
+		t.Fatalf("CreateWorkItem() error = %v", err)
+	}
+	if _, err := store.ClaimWorkItem(ClaimWorkItemInput{
+		ID:    "W-9999",
+		Actor: Actor{ID: "xj@macbook"},
+		TTL:   time.Hour,
+	}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for missing work item, got %v", err)
+	}
+	if _, err := store.ClaimWorkItem(ClaimWorkItemInput{
+		ID:    item.ID,
+		Actor: Actor{},
+		TTL:   time.Hour,
+	}); err == nil {
+		t.Fatalf("expected missing actor error")
+	}
+	if _, err := store.ClaimWorkItem(ClaimWorkItemInput{
+		ID:    item.ID,
+		Actor: Actor{ID: "xj@macbook"},
+		TTL:   0,
+	}); err == nil {
+		t.Fatalf("expected ttl validation error")
+	}
+}
+
 func TestCreateTypedWorkItemUsesWorkTypeScaffold(t *testing.T) {
 	store := newInitializedTestStore(t)
 
@@ -282,6 +440,70 @@ func TestCreateTypedWorkItemUsesWorkTypeScaffold(t *testing.T) {
 	}
 	if got.Type != "research" {
 		t.Fatalf("expected persisted type after work type removal, got %#v", got)
+	}
+}
+
+func TestGetWorkPolicyReadsTypePolicy(t *testing.T) {
+	store := newInitializedTestStore(t)
+
+	item, err := store.CreateWorkItem(WorkItemInput{
+		Title: "Understand filesystem research",
+		Type:  "research",
+	})
+	if err != nil {
+		t.Fatalf("CreateWorkItem() typed error = %v", err)
+	}
+	policy, ok, err := store.GetWorkPolicy(item.ID)
+	if err != nil {
+		t.Fatalf("GetWorkPolicy() error = %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected research policy")
+	}
+	if policy.WorkItemID != item.ID || policy.WorkType != "research" {
+		t.Fatalf("unexpected policy identity: %#v", policy)
+	}
+	if !strings.HasSuffix(policy.Path, filepath.Join("types", "research", "policy.md")) {
+		t.Fatalf("unexpected policy path: %s", policy.Path)
+	}
+	if !bytes.Contains([]byte(policy.Body), []byte("# Research Policy")) {
+		t.Fatalf("unexpected policy body:\n%s", policy.Body)
+	}
+}
+
+func TestGetWorkPolicyReturnsFalseWhenTypeHasNoPolicy(t *testing.T) {
+	store := newInitializedTestStore(t)
+	typeDir := filepath.Join(store.Root(), "types", "plain")
+	if err := os.MkdirAll(typeDir, 0o755); err != nil {
+		t.Fatalf("mkdir work type: %v", err)
+	}
+	manifest := []byte("schema_version: 1\nid: plain\n")
+	if err := os.WriteFile(filepath.Join(typeDir, "type.yaml"), manifest, 0o644); err != nil {
+		t.Fatalf("write work type manifest: %v", err)
+	}
+
+	item, err := store.CreateWorkItem(WorkItemInput{Title: "Plain typed work", Type: "plain"})
+	if err != nil {
+		t.Fatalf("CreateWorkItem() typed error = %v", err)
+	}
+	if policy, ok, err := store.GetWorkPolicy(item.ID); err != nil || ok {
+		t.Fatalf("expected no policy, got ok=%v policy=%#v err=%v", ok, policy, err)
+	}
+}
+
+func TestWorkTypePolicyPathCannotEscapeTypeDirectory(t *testing.T) {
+	store := newInitializedTestStore(t)
+	typeDir := filepath.Join(store.Root(), "types", "bad-policy")
+	if err := os.MkdirAll(typeDir, 0o755); err != nil {
+		t.Fatalf("mkdir work type: %v", err)
+	}
+	manifest := []byte("schema_version: 1\nid: bad-policy\npolicy: ../policy.md\n")
+	if err := os.WriteFile(filepath.Join(typeDir, "type.yaml"), manifest, 0o644); err != nil {
+		t.Fatalf("write work type manifest: %v", err)
+	}
+
+	if _, err := store.CreateWorkItem(WorkItemInput{Title: "Bad policy", Type: "bad-policy"}); err == nil {
+		t.Fatalf("expected policy path validation error")
 	}
 }
 

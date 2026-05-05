@@ -21,7 +21,18 @@ var builtinWorkTypes = []builtinWorkType{
 				"schema_version: 1",
 				"id: research",
 				"description: Research workspace",
+				"policy: policy.md",
 				"scaffold: scaffold",
+			),
+			"policy.md": joinLines(
+				"# Research Policy",
+				"",
+				"Use this type for one bounded research question with a durable written conclusion.",
+				"",
+				"- Start by writing the question, scope, and expected output in `notes.md`.",
+				"- Keep raw captures and excerpts under `raw/`; do not mix raw material into conclusions.",
+				"- Synthesize only durable findings in `findings.md`, with evidence and open questions.",
+				"- Close the work item only after `findings.md` is useful to a later agent without replaying the full research.",
 			),
 			"scaffold/README.md": joinLines(
 				"# Research Work",

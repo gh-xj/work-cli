@@ -31,6 +31,7 @@ type CLI struct {
 	Inbox   InboxCmd   `cmd:"" help:"capture and list inbox items"`
 	Triage  TriageCmd  `cmd:"" help:"triage inbox items"`
 	New     NewCmd     `cmd:"" help:"create a work item"`
+	Claim   ClaimCmd   `cmd:"" help:"claim a work item lease"`
 	View    ViewCmd    `cmd:"" help:"list a named work view"`
 	Show    ShowCmd    `cmd:"" help:"show a work item"`
 	Version VersionCmd `cmd:"" help:"print build metadata"`

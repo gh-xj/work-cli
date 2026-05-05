@@ -54,6 +54,9 @@ tasks:
         ./bin/work --store "$WORK_SMOKE/.work" inbox add "Captured idea" --body "raw note" --source smoke
         ./bin/work --store "$WORK_SMOKE/.work" inbox --json >/dev/null
         ./bin/work --store "$WORK_SMOKE/.work" triage accept IN-0001 --priority P1 --area smoke
+        ./bin/work --store "$WORK_SMOKE/.work" claim W-0001 --actor smoke --ttl 1h --json >/dev/null
+        ./bin/work --store "$WORK_SMOKE/.work" new "Research request" --type research --json >/dev/null
+        ./bin/work --store "$WORK_SMOKE/.work" show W-0002 --policy >/dev/null
         ./bin/work --store "$WORK_SMOKE/.work" view ready --json >/dev/null
         ./bin/work --store "$WORK_SMOKE/.work" show W-0001 --json >/dev/null
         ./bin/work --store "$WORK_SMOKE/.work" show IN-0001 --json >/dev/null
