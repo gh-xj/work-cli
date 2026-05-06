@@ -128,6 +128,9 @@ func TestAddInboxItemAndListInbox(t *testing.T) {
 	if !bytes.Contains(content, []byte("id: IN-0001")) || !bytes.Contains(content, []byte("source: slack")) {
 		t.Fatalf("expected inbox YAML to contain stored fields, got:\n%s", content)
 	}
+	if !bytes.Contains(content, []byte("schema_version: 1")) {
+		t.Fatalf("expected inbox YAML to include schema_version, got:\n%s", content)
+	}
 }
 
 func TestAcceptInboxItemCreatesWorkItemAndMarksInboxAccepted(t *testing.T) {
@@ -186,9 +189,118 @@ func TestAcceptInboxItemCreatesWorkItemAndMarksInboxAccepted(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(store.Root(), "items", "W-0001.yaml")); err != nil {
 		t.Fatalf("expected flat work item file: %v", err)
 	}
+	workYAML, err := os.ReadFile(filepath.Join(store.Root(), "items", "W-0001.yaml"))
+	if err != nil {
+		t.Fatalf("read work item yaml: %v", err)
+	}
+	if !bytes.Contains(workYAML, []byte("schema_version: 1")) {
+		t.Fatalf("expected work item YAML to include schema_version, got:\n%s", workYAML)
+	}
 
 	if _, err := store.AcceptInboxItem(inbox.ID, AcceptInboxOptions{}); !errors.Is(err, ErrAlreadyAccepted) {
 		t.Fatalf("expected ErrAlreadyAccepted, got %v", err)
+	}
+}
+
+func TestLegacyRecordsWithoutSchemaVersionReadAsV1(t *testing.T) {
+	store := newInitializedTestStore(t)
+	inboxYAML := []byte("id: IN-0001\ntitle: Legacy inbox\nstatus: open\ncreated_at: 2026-04-29T12:00:00Z\nupdated_at: 2026-04-29T12:00:00Z\n")
+	if err := os.WriteFile(filepath.Join(store.Root(), "inbox", "IN-0001.yaml"), inboxYAML, 0o644); err != nil {
+		t.Fatalf("write legacy inbox: %v", err)
+	}
+	workYAML := []byte("id: W-0001\ntitle: Legacy work\nstatus: ready\ncreated_at: 2026-04-29T12:00:00Z\nupdated_at: 2026-04-29T12:00:00Z\n")
+	if err := os.WriteFile(filepath.Join(store.Root(), "items", "W-0001.yaml"), workYAML, 0o644); err != nil {
+		t.Fatalf("write legacy work item: %v", err)
+	}
+
+	inbox, err := store.GetInboxItem("IN-0001")
+	if err != nil {
+		t.Fatalf("GetInboxItem() legacy error = %v", err)
+	}
+	if inbox.SchemaVersion != CurrentRecordSchemaVersion {
+		t.Fatalf("expected inbox fallback schema version, got %#v", inbox)
+	}
+	item, err := store.GetWorkItem("W-0001")
+	if err != nil {
+		t.Fatalf("GetWorkItem() legacy error = %v", err)
+	}
+	if item.SchemaVersion != CurrentRecordSchemaVersion {
+		t.Fatalf("expected work item fallback schema version, got %#v", item)
+	}
+}
+
+func TestUnsupportedRecordSchemaVersionFailsRead(t *testing.T) {
+	store := newInitializedTestStore(t)
+	inboxYAML := []byte("schema_version: 99\nid: IN-0001\ntitle: Future inbox\nstatus: open\ncreated_at: 2026-04-29T12:00:00Z\nupdated_at: 2026-04-29T12:00:00Z\n")
+	if err := os.WriteFile(filepath.Join(store.Root(), "inbox", "IN-0001.yaml"), inboxYAML, 0o644); err != nil {
+		t.Fatalf("write future inbox: %v", err)
+	}
+	if _, err := store.GetInboxItem("IN-0001"); err == nil || !strings.Contains(err.Error(), "unsupported schema_version 99") {
+		t.Fatalf("expected unsupported inbox schema error, got %v", err)
+	}
+
+	workYAML := []byte("schema_version: 99\nid: W-0001\ntitle: Future work\nstatus: ready\ncreated_at: 2026-04-29T12:00:00Z\nupdated_at: 2026-04-29T12:00:00Z\n")
+	if err := os.WriteFile(filepath.Join(store.Root(), "items", "W-0001.yaml"), workYAML, 0o644); err != nil {
+		t.Fatalf("write future work item: %v", err)
+	}
+	if _, err := store.GetWorkItem("W-0001"); err == nil || !strings.Contains(err.Error(), "unsupported schema_version 99") {
+		t.Fatalf("expected unsupported work item schema error, got %v", err)
+	}
+}
+
+func TestMigrateBackfillsMissingSchemaVersions(t *testing.T) {
+	store := newInitializedTestStore(t)
+	inboxPath := filepath.Join(store.Root(), "inbox", "IN-0001.yaml")
+	legacyInbox := []byte("id: IN-0001\ntitle: Legacy inbox\nstatus: open\ncreated_at: 2026-04-29T12:00:00Z\nupdated_at: 2026-04-29T12:00:00Z\n")
+	if err := os.WriteFile(inboxPath, legacyInbox, 0o644); err != nil {
+		t.Fatalf("write legacy inbox: %v", err)
+	}
+	workPath := filepath.Join(store.Root(), "items", "W-0001.yaml")
+	legacyWork := []byte("id: W-0001\ntitle: Legacy work\nstatus: ready\ncreated_at: 2026-04-29T12:00:00Z\nupdated_at: 2026-04-29T12:00:00Z\n")
+	if err := os.WriteFile(workPath, legacyWork, 0o644); err != nil {
+		t.Fatalf("write legacy work item: %v", err)
+	}
+
+	dryRun, err := store.Migrate(MigrateInput{DryRun: true})
+	if err != nil {
+		t.Fatalf("Migrate(dry-run) error = %v", err)
+	}
+	if !dryRun.DryRun || dryRun.InboxItems.Changed != 1 || dryRun.WorkItems.Changed != 1 || dryRun.Changed() != 2 {
+		t.Fatalf("unexpected dry-run result: %#v", dryRun)
+	}
+	gotInbox, err := os.ReadFile(inboxPath)
+	if err != nil {
+		t.Fatalf("read dry-run inbox: %v", err)
+	}
+	if bytes.Contains(gotInbox, []byte("schema_version")) {
+		t.Fatalf("dry-run should not write inbox schema_version, got:\n%s", gotInbox)
+	}
+
+	applied, err := store.Migrate(MigrateInput{})
+	if err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+	if applied.InboxItems.Changed != 1 || applied.WorkItems.Changed != 1 {
+		t.Fatalf("unexpected applied result: %#v", applied)
+	}
+	gotInbox, err = os.ReadFile(inboxPath)
+	if err != nil {
+		t.Fatalf("read migrated inbox: %v", err)
+	}
+	gotWork, err := os.ReadFile(workPath)
+	if err != nil {
+		t.Fatalf("read migrated work item: %v", err)
+	}
+	if !bytes.Contains(gotInbox, []byte("schema_version: 1")) || !bytes.Contains(gotWork, []byte("schema_version: 1")) {
+		t.Fatalf("expected migrated schema versions, inbox:\n%s\nwork:\n%s", gotInbox, gotWork)
+	}
+
+	again, err := store.Migrate(MigrateInput{})
+	if err != nil {
+		t.Fatalf("Migrate() second error = %v", err)
+	}
+	if again.Changed() != 0 || again.InboxItems.Scanned != 1 || again.WorkItems.Scanned != 1 {
+		t.Fatalf("expected idempotent second migration, got %#v", again)
 	}
 }
 

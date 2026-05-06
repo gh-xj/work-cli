@@ -8,6 +8,12 @@ const (
 	DefaultStoreDir = ".work"
 )
 
+const (
+	// CurrentRecordSchemaVersion is the durable YAML schema version for inbox
+	// and work item records.
+	CurrentRecordSchemaVersion = 1
+)
+
 type InboxStatus string
 
 const (
@@ -35,17 +41,18 @@ const (
 
 // InboxItem is a captured piece of untriaged work.
 type InboxItem struct {
-	ID         string            `yaml:"id" json:"id"`
-	Title      string            `yaml:"title" json:"title"`
-	Body       string            `yaml:"body,omitempty" json:"body,omitempty"`
-	Source     string            `yaml:"source,omitempty" json:"source,omitempty"`
-	Status     InboxStatus       `yaml:"status" json:"status"`
-	Labels     []string          `yaml:"labels,omitempty" json:"labels,omitempty"`
-	Metadata   map[string]string `yaml:"metadata,omitempty" json:"metadata,omitempty"`
-	AcceptedAs string            `yaml:"accepted_as,omitempty" json:"accepted_as,omitempty"`
-	CreatedAt  time.Time         `yaml:"created_at" json:"created_at"`
-	UpdatedAt  time.Time         `yaml:"updated_at" json:"updated_at"`
-	AcceptedAt *time.Time        `yaml:"accepted_at,omitempty" json:"accepted_at,omitempty"`
+	SchemaVersion int               `yaml:"schema_version" json:"schema_version"`
+	ID            string            `yaml:"id" json:"id"`
+	Title         string            `yaml:"title" json:"title"`
+	Body          string            `yaml:"body,omitempty" json:"body,omitempty"`
+	Source        string            `yaml:"source,omitempty" json:"source,omitempty"`
+	Status        InboxStatus       `yaml:"status" json:"status"`
+	Labels        []string          `yaml:"labels,omitempty" json:"labels,omitempty"`
+	Metadata      map[string]string `yaml:"metadata,omitempty" json:"metadata,omitempty"`
+	AcceptedAs    string            `yaml:"accepted_as,omitempty" json:"accepted_as,omitempty"`
+	CreatedAt     time.Time         `yaml:"created_at" json:"created_at"`
+	UpdatedAt     time.Time         `yaml:"updated_at" json:"updated_at"`
+	AcceptedAt    *time.Time        `yaml:"accepted_at,omitempty" json:"accepted_at,omitempty"`
 }
 
 // InboxItemInput describes an inbox item to create.
@@ -59,6 +66,7 @@ type InboxItemInput struct {
 
 // WorkItem is the durable unit tracked by the work CLI.
 type WorkItem struct {
+	SchemaVersion int               `yaml:"schema_version" json:"schema_version"`
 	ID            string            `yaml:"id" json:"id"`
 	Title         string            `yaml:"title" json:"title"`
 	Type          string            `yaml:"type,omitempty" json:"type,omitempty"`
@@ -105,6 +113,29 @@ type WorkPolicy struct {
 	WorkType   string `yaml:"work_type" json:"work_type"`
 	Path       string `yaml:"path" json:"path"`
 	Body       string `yaml:"body" json:"body"`
+}
+
+// MigrateInput controls safe, idempotent store migrations.
+type MigrateInput struct {
+	DryRun bool
+}
+
+// MigrationResult summarizes the store records scanned and changed.
+type MigrationResult struct {
+	DryRun     bool                  `json:"dry_run"`
+	InboxItems MigrationRecordResult `json:"inbox_items"`
+	WorkItems  MigrationRecordResult `json:"work_items"`
+}
+
+// MigrationRecordResult summarizes one migrated record class.
+type MigrationRecordResult struct {
+	Scanned int `json:"scanned"`
+	Changed int `json:"changed"`
+}
+
+// Changed returns the total records changed, or that would change in dry-run.
+func (r MigrationResult) Changed() int {
+	return r.InboxItems.Changed + r.WorkItems.Changed
 }
 
 // WorkItemInput describes a work item to create.

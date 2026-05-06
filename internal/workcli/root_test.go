@@ -46,6 +46,44 @@ func TestExecuteVersionFlag(t *testing.T) {
 	}
 }
 
+func TestExecuteVersionCheckJSON(t *testing.T) {
+	previousFetch := fetchLatestRelease
+	previousVersion := appVersion
+	fetchLatestRelease = func(context.Context) (releaseVersion, error) {
+		return releaseVersion{Version: "v0.2.0", URL: "https://github.com/gh-xj/work-cli/releases/tag/v0.2.0"}, nil
+	}
+	appVersion = "v0.1.0"
+	t.Cleanup(func() {
+		fetchLatestRelease = previousFetch
+		appVersion = previousVersion
+	})
+
+	code, stdout, stderr := runWork(t, "--json", "version", "--check")
+	if code != appctx.ExitSuccess {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr)
+	}
+	var payload struct {
+		Version       string `json:"version"`
+		VersionSource string `json:"version_source"`
+		Latest        string `json:"latest"`
+		Status        string `json:"status"`
+		Outdated      *bool  `json:"outdated"`
+		InstallHint   string `json:"install_hint"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
+		t.Fatalf("unmarshal stdout: %v (stdout=%q)", err, stdout)
+	}
+	if payload.Version != "v0.1.0" || payload.VersionSource != versionSourceLdflags {
+		t.Fatalf("unexpected version payload: %#v", payload)
+	}
+	if payload.Latest != "v0.2.0" || payload.Status != "outdated" || payload.Outdated == nil || !*payload.Outdated {
+		t.Fatalf("expected outdated latest payload, got %#v", payload)
+	}
+	if payload.InstallHint != installHint {
+		t.Fatalf("expected install hint %q, got %q", installHint, payload.InstallHint)
+	}
+}
+
 func TestExecuteInitUsesGlobalStoreAndHonorsJSON(t *testing.T) {
 	fake, restore := installFakeStore(t)
 	defer restore()
@@ -165,6 +203,46 @@ func TestExecuteClaimMapsLeaseInput(t *testing.T) {
 	}
 }
 
+func TestExecuteMigrateMapsDryRun(t *testing.T) {
+	fake, restore := installFakeStore(t)
+	defer restore()
+
+	code, stdout, stderr := runWork(t, "--json", "migrate", "--dry-run")
+	if code != appctx.ExitSuccess {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr)
+	}
+	if !fake.migrateCalled {
+		t.Fatalf("expected Migrate to be called")
+	}
+	if !fake.migrateInput.DryRun {
+		t.Fatalf("expected dry-run migrate input, got %#v", fake.migrateInput)
+	}
+	var payload struct {
+		Migration work.MigrationResult `json:"migration"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
+		t.Fatalf("unmarshal stdout: %v (stdout=%q)", err, stdout)
+	}
+	if payload.Migration.WorkItems.Changed != 2 {
+		t.Fatalf("unexpected migration payload: %#v", payload.Migration)
+	}
+}
+
+func TestExecuteMigratePrintsNoop(t *testing.T) {
+	fake, restore := installFakeStore(t)
+	defer restore()
+	fake.migrateResult = work.MigrationResult{}
+	fake.migrateResultSet = true
+
+	code, stdout, stderr := runWork(t, "migrate")
+	if code != appctx.ExitSuccess {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr)
+	}
+	if stdout != "migration not needed\n" {
+		t.Fatalf("unexpected migrate stdout: %q", stdout)
+	}
+}
+
 func TestExecuteViewDefaultsReadyAndAcceptsName(t *testing.T) {
 	fake, restore := installFakeStore(t)
 	defer restore()
@@ -263,16 +341,20 @@ type fakeWorkStore struct {
 	acceptCalled    bool
 	createCalled    bool
 	claimCalled     bool
+	migrateCalled   bool
 	getCalled       bool
 
-	addInboxInput work.InboxItemInput
-	acceptInput   acceptInboxItemInput
-	createInput   work.WorkItemInput
-	claimInput    work.ClaimWorkItemInput
-	viewName      string
-	getID         string
-	getInboxID    string
-	getPolicyID   string
+	addInboxInput    work.InboxItemInput
+	acceptInput      acceptInboxItemInput
+	createInput      work.WorkItemInput
+	claimInput       work.ClaimWorkItemInput
+	migrateInput     work.MigrateInput
+	migrateResult    work.MigrationResult
+	migrateResultSet bool
+	viewName         string
+	getID            string
+	getInboxID       string
+	getPolicyID      string
 }
 
 func (f *fakeWorkStore) Init(context.Context) error {
@@ -312,6 +394,25 @@ func (f *fakeWorkStore) ClaimWorkItem(_ context.Context, input work.ClaimWorkIte
 	f.claimCalled = true
 	f.claimInput = input
 	return work.WorkLease{WorkItemID: input.ID, Actor: input.Actor, Session: input.Session, ExpiresAt: time.Date(2026, 4, 29, 13, 0, 0, 0, time.UTC)}, nil
+}
+
+func (f *fakeWorkStore) Migrate(_ context.Context, input work.MigrateInput) (work.MigrationResult, error) {
+	f.migrateCalled = true
+	f.migrateInput = input
+	if f.migrateResultSet {
+		return f.migrateResult, nil
+	}
+	return work.MigrationResult{
+		DryRun: input.DryRun,
+		InboxItems: work.MigrationRecordResult{
+			Scanned: 1,
+			Changed: 1,
+		},
+		WorkItems: work.MigrationRecordResult{
+			Scanned: 3,
+			Changed: 2,
+		},
+	}, nil
 }
 
 func (f *fakeWorkStore) ListView(_ context.Context, name string) (work.ViewResult, error) {

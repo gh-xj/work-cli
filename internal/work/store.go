@@ -143,15 +143,16 @@ func (s *Store) AddInboxItem(input InboxItemInput) (InboxItem, error) {
 		}
 		now := s.timestamp()
 		item = InboxItem{
-			ID:        id,
-			Title:     title,
-			Body:      strings.TrimSpace(input.Body),
-			Source:    strings.TrimSpace(input.Source),
-			Status:    InboxStatusOpen,
-			Labels:    cloneStrings(input.Labels),
-			Metadata:  cloneStringMap(input.Metadata),
-			CreatedAt: now,
-			UpdatedAt: now,
+			SchemaVersion: CurrentRecordSchemaVersion,
+			ID:            id,
+			Title:         title,
+			Body:          strings.TrimSpace(input.Body),
+			Source:        strings.TrimSpace(input.Source),
+			Status:        InboxStatusOpen,
+			Labels:        cloneStrings(input.Labels),
+			Metadata:      cloneStringMap(input.Metadata),
+			CreatedAt:     now,
+			UpdatedAt:     now,
 		}
 		return writeNewYAMLFile(s.inboxPath(id), item)
 	})
@@ -170,13 +171,13 @@ func (s *Store) ListInbox() ([]InboxItem, error) {
 
 	items := make([]InboxItem, 0, len(entries))
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".yaml" {
+		id := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".yaml" || !inboxIDPattern.MatchString(id) {
 			continue
 		}
-		var item InboxItem
-		path := filepath.Join(s.inboxDir(), entry.Name())
-		if err := readYAMLFile(path, &item); err != nil {
-			return nil, fmt.Errorf("read inbox item %s: %w", path, err)
+		item, err := s.readInboxItem(id)
+		if err != nil {
+			return nil, err
 		}
 		if item.Status == "" {
 			item.Status = InboxStatusOpen
@@ -367,6 +368,7 @@ func (s *Store) createWorkItemLocked(input WorkItemInput) (WorkItem, error) {
 	}
 	now := s.timestamp()
 	item := WorkItem{
+		SchemaVersion: CurrentRecordSchemaVersion,
 		ID:            id,
 		Title:         title,
 		Type:          workType,
@@ -429,7 +431,10 @@ func (s *Store) readInboxItem(id string) (InboxItem, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return InboxItem{}, fmt.Errorf("%w: inbox item %s", ErrNotFound, id)
 		}
-		return InboxItem{}, err
+		return InboxItem{}, fmt.Errorf("read inbox item %s: %w", path, err)
+	}
+	if err := normalizeInboxItem(&item); err != nil {
+		return InboxItem{}, fmt.Errorf("read inbox item %s: %w", path, err)
 	}
 	if item.Status == "" {
 		item.Status = InboxStatusOpen
@@ -444,6 +449,9 @@ func (s *Store) readWorkItem(id string) (WorkItem, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return WorkItem{}, fmt.Errorf("%w: work item %s", ErrNotFound, id)
 		}
+		return WorkItem{}, fmt.Errorf("read work item %s: %w", path, err)
+	}
+	if err := normalizeWorkItem(&item); err != nil {
 		return WorkItem{}, fmt.Errorf("read work item %s: %w", path, err)
 	}
 	return item, nil

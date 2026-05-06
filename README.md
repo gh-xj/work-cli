@@ -9,6 +9,16 @@ No service, no database, no account.
 go install github.com/gh-xj/work-cli/cmd/work@latest
 ```
 
+Check whether an installed binary is stale:
+
+```sh
+work version --check
+```
+
+To refresh a Go-installed binary, rerun `go install`. The CLI does not
+self-update; future package-manager installs should be updated through that
+package manager.
+
 Pre-built tarballs (`darwin`/`linux`, `amd64`/`arm64`) are attached to each
 GitHub release.
 
@@ -20,6 +30,8 @@ work inbox add "Idea I want to capture"
 work inbox                              # list captured items
 work triage accept IN-0001 --priority P1 --area infra
 work claim W-0001 --actor xj@laptop       # time-bound coordination lease
+work migrate --dry-run                 # inspect safe store migrations
+work migrate                           # backfill older record schema fields
 work new "Research question" --type research
 work show W-0002 --policy              # print the type policy for typed work
 work view ready                         # show ready work items
@@ -34,9 +46,9 @@ All commands accept `--json` for machine-readable output.
 .work/
   config.yaml         # store config (gitignored)
   inbox/
-    IN-0001.yaml      # inbox capture
+    IN-0001.yaml      # inbox capture, schema_version: 1
   items/
-    W-0001.yaml       # accepted work item
+    W-0001.yaml       # accepted work item, schema_version: 1
   leases/
     W-0001.yaml       # optional time-bounded claim
   types/

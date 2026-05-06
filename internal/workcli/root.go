@@ -32,6 +32,7 @@ type CLI struct {
 	Triage  TriageCmd  `cmd:"" help:"triage inbox items"`
 	New     NewCmd     `cmd:"" help:"create a work item"`
 	Claim   ClaimCmd   `cmd:"" help:"claim a work item lease"`
+	Migrate MigrateCmd `cmd:"" help:"migrate older work store records"`
 	View    ViewCmd    `cmd:"" help:"list a named work view"`
 	Show    ShowCmd    `cmd:"" help:"show a work item"`
 	Version VersionCmd `cmd:"" help:"print build metadata"`
@@ -64,7 +65,7 @@ func execWriters(args []string, stdout, stderr io.Writer) int {
 		Meta: cliruntime.Meta{
 			Name:        binaryName,
 			Description: "agent-native story/work CLI",
-			Version:     appVersion,
+			Version:     effectiveAppVersion(),
 			Commit:      appCommit,
 			Date:        appDate,
 		},

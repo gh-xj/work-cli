@@ -14,6 +14,7 @@ type workStore interface {
 	AcceptInboxItem(context.Context, acceptInboxItemInput) (work.WorkItem, error)
 	CreateWorkItem(context.Context, work.WorkItemInput) (work.WorkItem, error)
 	ClaimWorkItem(context.Context, work.ClaimWorkItemInput) (work.WorkLease, error)
+	Migrate(context.Context, work.MigrateInput) (work.MigrationResult, error)
 	ListView(context.Context, string) (work.ViewResult, error)
 	GetWorkItem(context.Context, string) (work.WorkItem, error)
 	GetWorkLease(context.Context, string) (work.WorkLease, bool, error)
@@ -63,6 +64,10 @@ func (s domainStore) CreateWorkItem(_ context.Context, input work.WorkItemInput)
 
 func (s domainStore) ClaimWorkItem(_ context.Context, input work.ClaimWorkItemInput) (work.WorkLease, error) {
 	return s.store.ClaimWorkItem(input)
+}
+
+func (s domainStore) Migrate(_ context.Context, input work.MigrateInput) (work.MigrationResult, error) {
+	return s.store.Migrate(input)
 }
 
 func (s domainStore) ListView(_ context.Context, name string) (work.ViewResult, error) {
