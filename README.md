@@ -66,6 +66,14 @@ every command.
 `v0.x` — used in production by the author, contracts may shift before
 `v1.0`. Issues and PRs welcome.
 
+## Philosophy
+
+What `work` is, what it isn't, and why:
+
+- [`docs/core-belief.md`](docs/core-belief.md) — manifesto.
+- [`docs/invariants.md`](docs/invariants.md) — verifiable hard constraints.
+- [`docs/anti-patterns.md`](docs/anti-patterns.md) — explicit refusals.
+
 ## Where this came from
 
 `work` was extracted from
