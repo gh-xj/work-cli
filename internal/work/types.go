@@ -79,6 +79,7 @@ type WorkItem struct {
 	Metadata      map[string]string `yaml:"metadata,omitempty" json:"metadata,omitempty"`
 	CreatedAt     time.Time         `yaml:"created_at" json:"created_at"`
 	UpdatedAt     time.Time         `yaml:"updated_at" json:"updated_at"`
+	CompletedAt   *time.Time        `yaml:"completed_at,omitempty" json:"completed_at,omitempty"`
 }
 
 // Actor identifies the human, agent runtime, script, or automation touching
@@ -157,6 +158,20 @@ type ClaimWorkItemInput struct {
 	Actor   Actor
 	Session *Session
 	TTL     time.Duration
+}
+
+// DoneWorkItemInput describes a request to mark a work item complete.
+type DoneWorkItemInput struct {
+	ID       string
+	Summary  string
+	Evidence []string
+}
+
+// DoneWorkItemResult describes the durable effects of marking work complete.
+type DoneWorkItemResult struct {
+	Item           WorkItem `json:"item"`
+	LeaseReleased  bool     `json:"lease_released"`
+	CompletionPath string   `json:"completion_path,omitempty"`
 }
 
 // AcceptInboxOptions controls how an inbox item becomes a work item.

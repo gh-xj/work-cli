@@ -315,6 +315,51 @@ func (s *Store) GetWorkItem(id string) (WorkItem, error) {
 	return item, nil
 }
 
+// DoneWorkItem marks a work item complete, releases its lease, and optionally
+// writes completion notes into the work item space.
+func (s *Store) DoneWorkItem(input DoneWorkItemInput) (DoneWorkItemResult, error) {
+	id := strings.TrimSpace(input.ID)
+	if !workIDPattern.MatchString(id) {
+		return DoneWorkItemResult{}, fmt.Errorf("invalid work item id %q", input.ID)
+	}
+	var result DoneWorkItemResult
+	err := s.withMutationLock(func() error {
+		if err := s.ensureInitialized(); err != nil {
+			return err
+		}
+		item, err := s.readWorkItem(id)
+		if err != nil {
+			return err
+		}
+		now := s.timestamp()
+		item.Status = WorkStatusDone
+		item.UpdatedAt = now
+		if item.CompletedAt == nil {
+			completedAt := now
+			item.CompletedAt = &completedAt
+		}
+		if err := writeYAMLFile(s.workItemPath(id), item); err != nil {
+			return err
+		}
+		leasePath := s.workLeasePath(id)
+		if err := os.Remove(leasePath); err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("release work lease %s: %w", leasePath, err)
+			}
+		} else {
+			result.LeaseReleased = true
+		}
+		completionPath, err := s.writeCompletionNote(id, input, now)
+		if err != nil {
+			return err
+		}
+		result.Item = item
+		result.CompletionPath = completionPath
+		return nil
+	})
+	return result, err
+}
+
 // ListView materializes the saved view identified by ID or case-insensitive
 // name.
 func (s *Store) ListView(idOrName string) (ViewResult, error) {
@@ -334,6 +379,34 @@ func (s *Store) ListView(idOrName string) (ViewResult, error) {
 		return ViewResult{}, err
 	}
 	return ViewResult{View: view, Items: items}, nil
+}
+
+func (s *Store) writeCompletionNote(id string, input DoneWorkItemInput, completedAt time.Time) (string, error) {
+	summary := strings.TrimSpace(input.Summary)
+	evidence := trimStrings(input.Evidence)
+	if summary == "" && len(evidence) == 0 {
+		return "", nil
+	}
+	path := filepath.Join(s.workItemSpacePath(id), "completion.md")
+	var b strings.Builder
+	b.WriteString("# Completion\n\n")
+	b.WriteString("Completed at: ")
+	b.WriteString(completedAt.Format(time.RFC3339))
+	b.WriteString("\n")
+	if summary != "" {
+		b.WriteString("\n## Summary\n\n")
+		b.WriteString(summary)
+		b.WriteString("\n")
+	}
+	if len(evidence) > 0 {
+		b.WriteString("\n## Evidence\n\n")
+		for _, item := range evidence {
+			b.WriteString("- ")
+			b.WriteString(item)
+			b.WriteString("\n")
+		}
+	}
+	return path, writeFileAtomic(path, []byte(b.String()))
 }
 
 func (s *Store) createWorkItemLocked(input WorkItemInput) (WorkItem, error) {
@@ -796,6 +869,18 @@ func cloneStrings(in []string) []string {
 		return nil
 	}
 	out := append([]string(nil), in...)
+	return out
+}
+
+func trimStrings(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, item := range in {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		out = append(out, item)
+	}
 	return out
 }
 

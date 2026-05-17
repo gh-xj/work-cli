@@ -203,6 +203,40 @@ func TestExecuteClaimMapsLeaseInput(t *testing.T) {
 	}
 }
 
+func TestExecuteDoneMapsCompletionInput(t *testing.T) {
+	fake, restore := installFakeStore(t)
+	defer restore()
+
+	code, stdout, stderr := runWork(t,
+		"--json",
+		"done", "W-0001",
+		"--summary", "Implemented and verified.",
+		"--evidence", "commit abc123",
+		"--evidence", "task verify passed",
+	)
+	if code != appctx.ExitSuccess {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr)
+	}
+	if !fake.doneCalled {
+		t.Fatalf("expected DoneWorkItem to be called")
+	}
+	if fake.doneInput.ID != "W-0001" || fake.doneInput.Summary != "Implemented and verified." {
+		t.Fatalf("unexpected done input: %#v", fake.doneInput)
+	}
+	if len(fake.doneInput.Evidence) != 2 || fake.doneInput.Evidence[0] != "commit abc123" {
+		t.Fatalf("unexpected done evidence: %#v", fake.doneInput.Evidence)
+	}
+	var payload struct {
+		Result work.DoneWorkItemResult `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
+		t.Fatalf("unmarshal stdout: %v (stdout=%q)", err, stdout)
+	}
+	if payload.Result.Item.Status != work.WorkStatusDone || !payload.Result.LeaseReleased {
+		t.Fatalf("unexpected done payload: %#v", payload.Result)
+	}
+}
+
 func TestExecuteMigrateMapsDryRun(t *testing.T) {
 	fake, restore := installFakeStore(t)
 	defer restore()
@@ -341,6 +375,7 @@ type fakeWorkStore struct {
 	acceptCalled    bool
 	createCalled    bool
 	claimCalled     bool
+	doneCalled      bool
 	migrateCalled   bool
 	getCalled       bool
 
@@ -348,6 +383,7 @@ type fakeWorkStore struct {
 	acceptInput      acceptInboxItemInput
 	createInput      work.WorkItemInput
 	claimInput       work.ClaimWorkItemInput
+	doneInput        work.DoneWorkItemInput
 	migrateInput     work.MigrateInput
 	migrateResult    work.MigrationResult
 	migrateResultSet bool
@@ -394,6 +430,21 @@ func (f *fakeWorkStore) ClaimWorkItem(_ context.Context, input work.ClaimWorkIte
 	f.claimCalled = true
 	f.claimInput = input
 	return work.WorkLease{WorkItemID: input.ID, Actor: input.Actor, Session: input.Session, ExpiresAt: time.Date(2026, 4, 29, 13, 0, 0, 0, time.UTC)}, nil
+}
+
+func (f *fakeWorkStore) DoneWorkItem(_ context.Context, input work.DoneWorkItemInput) (work.DoneWorkItemResult, error) {
+	f.doneCalled = true
+	f.doneInput = input
+	completedAt := time.Date(2026, 4, 29, 13, 0, 0, 0, time.UTC)
+	return work.DoneWorkItemResult{
+		Item: work.WorkItem{
+			ID:          input.ID,
+			Status:      work.WorkStatusDone,
+			CompletedAt: &completedAt,
+		},
+		LeaseReleased:  true,
+		CompletionPath: "/tmp/.work/spaces/" + input.ID + "/completion.md",
+	}, nil
 }
 
 func (f *fakeWorkStore) Migrate(_ context.Context, input work.MigrateInput) (work.MigrationResult, error) {

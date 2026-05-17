@@ -27,7 +27,7 @@ JSON, store path, writers).
 
 **Verify** &nbsp; `grep -rn 'func .*Run.*\*CLI.*error' internal/workcli/`
 matches every leaf command (Init, InboxAdd, InboxList, TriageAccept, New,
-Claim, Migrate, View, Show, Version).
+Claim, Done, Migrate, View, Show, Version).
 
 ---
 

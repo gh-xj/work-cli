@@ -55,6 +55,8 @@ tasks:
         ./bin/work --store "$WORK_SMOKE/.work" inbox --json >/dev/null
         ./bin/work --store "$WORK_SMOKE/.work" triage accept IN-0001 --priority P1 --area smoke
         ./bin/work --store "$WORK_SMOKE/.work" claim W-0001 --actor smoke --ttl 1h --json >/dev/null
+        ./bin/work --store "$WORK_SMOKE/.work" done W-0001 --summary "Smoke complete" --evidence "smoke verified" --json >/dev/null
+        ./bin/work --store "$WORK_SMOKE/.work" show W-0001 --json | jq -e '.item.status == "done" and .item.completed_at != null' >/dev/null
         ./bin/work --store "$WORK_SMOKE/.work" migrate --dry-run --json >/dev/null
         ./bin/work --store "$WORK_SMOKE/.work" migrate --json >/dev/null
         ./bin/work --store "$WORK_SMOKE/.work" new "Research request" --type research --json >/dev/null

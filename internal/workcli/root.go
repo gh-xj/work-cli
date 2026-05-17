@@ -32,6 +32,7 @@ type CLI struct {
 	Triage  TriageCmd  `cmd:"" help:"triage inbox items"`
 	New     NewCmd     `cmd:"" help:"create a work item"`
 	Claim   ClaimCmd   `cmd:"" help:"claim a work item lease"`
+	Done    DoneCmd    `cmd:"" help:"mark a work item done"`
 	Migrate MigrateCmd `cmd:"" help:"migrate older work store records"`
 	View    ViewCmd    `cmd:"" help:"list a named work view"`
 	Show    ShowCmd    `cmd:"" help:"show a work item"`

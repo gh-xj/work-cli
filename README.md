@@ -30,6 +30,7 @@ work inbox add "Idea I want to capture"
 work inbox                              # list captured items
 work triage accept IN-0001 --priority P1 --area infra
 work claim W-0001 --actor xj@laptop       # time-bound coordination lease
+work done W-0001 --summary "Shipped" --evidence "task ci passed"
 work migrate --dry-run                 # inspect safe store migrations
 work migrate                           # backfill older record schema fields
 work new "Research question" --type research

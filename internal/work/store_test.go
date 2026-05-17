@@ -509,6 +509,73 @@ func TestClaimWorkItemValidatesInputs(t *testing.T) {
 	}
 }
 
+func TestDoneWorkItemMarksDoneReleasesLeaseAndWritesCompletion(t *testing.T) {
+	store := newInitializedTestStore(t)
+	item, err := store.CreateWorkItem(WorkItemInput{Title: "Complete work"})
+	if err != nil {
+		t.Fatalf("CreateWorkItem() error = %v", err)
+	}
+	if _, err := store.ClaimWorkItem(ClaimWorkItemInput{
+		ID:    item.ID,
+		Actor: Actor{ID: "agent:codex:test"},
+		TTL:   time.Hour,
+	}); err != nil {
+		t.Fatalf("ClaimWorkItem() error = %v", err)
+	}
+
+	result, err := store.DoneWorkItem(DoneWorkItemInput{
+		ID:       item.ID,
+		Summary:  "Implemented and verified.",
+		Evidence: []string{"commit abc123", "task verify passed"},
+	})
+	if err != nil {
+		t.Fatalf("DoneWorkItem() error = %v", err)
+	}
+	if result.Item.Status != WorkStatusDone || result.Item.CompletedAt == nil || !result.LeaseReleased {
+		t.Fatalf("unexpected done result: %#v", result)
+	}
+	if result.CompletionPath == "" {
+		t.Fatalf("expected completion path")
+	}
+
+	got, err := store.GetWorkItem(item.ID)
+	if err != nil {
+		t.Fatalf("GetWorkItem() error = %v", err)
+	}
+	if got.Status != WorkStatusDone || got.CompletedAt == nil {
+		t.Fatalf("expected done item with completed_at, got %#v", got)
+	}
+	if _, ok, err := store.GetWorkLease(item.ID); err != nil || ok {
+		t.Fatalf("expected lease released, ok=%v err=%v", ok, err)
+	}
+	note, err := os.ReadFile(result.CompletionPath)
+	if err != nil {
+		t.Fatalf("read completion note: %v", err)
+	}
+	for _, want := range []string{"# Completion", "Implemented and verified.", "commit abc123", "task verify passed"} {
+		if !bytes.Contains(note, []byte(want)) {
+			t.Fatalf("expected completion note to contain %q, got:\n%s", want, note)
+		}
+	}
+	itemYAML, err := os.ReadFile(filepath.Join(store.Root(), "items", item.ID+".yaml"))
+	if err != nil {
+		t.Fatalf("read item yaml: %v", err)
+	}
+	if !bytes.Contains(itemYAML, []byte("status: done")) || !bytes.Contains(itemYAML, []byte("completed_at:")) {
+		t.Fatalf("expected item yaml to record done status and completed_at, got:\n%s", itemYAML)
+	}
+}
+
+func TestDoneWorkItemValidatesID(t *testing.T) {
+	store := newInitializedTestStore(t)
+	if _, err := store.DoneWorkItem(DoneWorkItemInput{ID: "missing"}); err == nil {
+		t.Fatalf("expected invalid id error")
+	}
+	if _, err := store.DoneWorkItem(DoneWorkItemInput{ID: "W-9999"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for missing work item, got %v", err)
+	}
+}
+
 func TestCreateTypedWorkItemUsesWorkTypeScaffold(t *testing.T) {
 	store := newInitializedTestStore(t)
 

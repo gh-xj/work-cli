@@ -22,8 +22,8 @@ schema, and before arguing for a richer lifecycle:
 
 - `cmd/work/main.go` — entry point. One line: `os.Exit(workcli.Execute(os.Args[1:]))`.
 - `internal/workcli/` — CLI surface. One file per subcommand
-  (`init.go`, `inbox.go`, `triage.go`, `new.go`, `view.go`, `show.go`,
-  `version.go`), plus `root.go` (global flags + `CLI` struct) and
+  (`init.go`, `inbox.go`, `triage.go`, `new.go`, `claim.go`, `done.go`,
+  `view.go`, `show.go`, `version.go`), plus `root.go` (global flags + `CLI` struct) and
   `service.go` (the `workStore` seam used by tests).
 - `internal/cliruntime/` — shared kong-runner plumbing (see invariant
   below). May host a sibling binary in the future.
